@@ -1,24 +1,39 @@
-version: '3.8'
-
 services:
   frontend-portal:
+    # 镜像名带版本（commit），任何一份运行中的镜像都能反查到代码版本；
+    # VCS_REF 由 scripts/deploy.sh 从 git 注入，直接 docker compose build 时退化为 local
+    image: portal-frontend:${VCS_REF:-local}
     build:
       context: ./frontend-portal
       dockerfile: Dockerfile
-      platforms:
-        - linux/amd64
-        - linux/arm64
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
+        APP_VERSION: ${APP_VERSION:-0.0.0}
+        VCS_REF: ${VCS_REF:-unknown}
+        VCS_BRANCH: ${VCS_BRANCH:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
     container_name: portal-frontend
     ports:
-      - "8081:80"
+      # 对外端口与本地 vite dev/preview 一致，统一取自根目录 .env 的 PORT
+      - "${PORT:-8081}:${CONTAINER_PORT:-8081}"
+    environment:
+      CONTAINER_PORT: ${CONTAINER_PORT:-8081}
+      # 后端地址，生产环境用 BACKEND_URL=http://your-backend:8080 覆盖
+      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:8080}
+    extra_hosts:
+      # 让容器内可以通过 host.docker.internal 访问宿主机上的后端（Linux 上默认没有该映射）
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - portal-network
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
+      test:
+        - CMD-SHELL
+        - 'wget -q -O /dev/null http://127.0.0.1:${CONTAINER_PORT}/healthz || exit 1'
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
+      start_period: 5s
 
 networks:
   portal-network:

@@ -1,0 +1,23 @@
+# 依赖与构建产物必须排除：
+# 宿主（尤其是 macOS/Windows）上的 node_modules 拷进 Linux 镜像会导致原生二进制不兼容；
+# dist 由镜像内构建重新生成，避免旧产物残留。
+node_modules
+dist
+
+# 本地环境文件（容器内通过 build args / 环境变量注入）
+.env.local
+.env.*.local
+
+# 日志
+npm-debug.log*
+*.log
+
+# 编辑器/系统文件
+.idea
+.vscode
+.DS_Store
+.git
+.gitignore
+Dockerfile
+.dockerignore
+README.md

@@ -1,0 +1,85 @@
+name: build-and-deploy-check
+
+# 构建与上线前检查串联流水线：
+#   install -> 类型检查/构建 -> 本地冒烟 -> 镜像构建 -> 临时容器冒烟
+# 任何一步失败即中止；每个 job 幂等（全新 runner），可单独 Re-run failed jobs。
+
+on:
+  push:
+    branches: [main, A]
+  pull_request:
+  workflow_dispatch: # 支持手动重跑整流水线
+
+env:
+  PORT: '8081'
+  CONTAINER_PORT: '8081'
+  # CI 中没有真实后端，冒烟只校验前端；接后端后在 verify job 中配置 API_CHECKS
+  BACKEND_URL: http://host.docker.internal:8080
+
+jobs:
+  build:
+    name: 依赖安装 / 构建 / 本地产物冒烟
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend-portal/package-lock.json
+
+      - name: 安装依赖（npm ci，与容器同口径）
+        working-directory: frontend-portal
+        run: npm ci
+
+      - name: 生产构建（含 vue-tsc 类型检查 + version.json）
+        working-directory: frontend-portal
+        run: npm run build
+        env:
+          APP_VERSION: ${{ vars.APP_VERSION || '0.0.0' }}
+          VCS_REF: ${{ github.sha }}
+          VCS_BRANCH: ${{ github.ref_name }}
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-portal/dist
+          retention-days: 7
+
+      - name: 本地产物冒烟（vite preview，脚本结束自动停服）
+        run: ./scripts/local-smoke.sh
+
+  container-verify:
+    name: 镜像构建 / 临时容器冒烟
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置版本变量
+        run: |
+          echo "VCS_REF=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+          echo "VCS_BRANCH=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(node -p "require('./frontend-portal/package.json').version")" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - name: 构建镜像（Docker layer 缓存）
+        run: ./scripts/deploy.sh build
+
+      - name: 临时容器冒烟（失败自动清理容器）
+        run: ./scripts/deploy.sh verify
+        env:
+          SMOKE_TIMEOUT: '90'
+          # 接入后端后取消注释即可增加接口级检查：
+          # API_CHECKS: 'GET /api/news/list?page=1&size=10'
+
+      - name: 失败时导出容器日志
+        if: failure()
+        run: |
+          docker ps -a || true
+          docker logs portal-frontend-smoke-* 2>/dev/null || true

@@ -76,6 +76,9 @@
       <!-- 底部版权 -->
       <div class="footer-bottom">
         <p>© {{ currentYear }} Portal. All rights reserved.</p>
+        <p v-if="buildVersion" class="footer-version" :title="versionTitle">
+          {{ buildVersion }}
+        </p>
         <div class="footer-legal">
           <a href="#" @click.prevent="handleNotImplemented">隐私政策</a>
           <a href="#" @click.prevent="handleNotImplemented">服务条款</a>
@@ -87,12 +90,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const currentYear = computed(() => new Date().getFullYear())
+
+// 构建版本信息（构建产物 /version.json，由 scripts/gen-version.mjs 生成）
+const versionInfo = ref<{ version?: string; commit?: string; branch?: string; builtAt?: string } | null>(null)
+const buildVersion = computed(() => {
+  const v = versionInfo.value
+  if (!v?.commit) return ''
+  return `v${v.version || ''} · ${v.commit}`
+})
+const versionTitle = computed(() => {
+  const v = versionInfo.value
+  if (!v) return ''
+  return `分支: ${v.branch || '-'}｜构建时间: ${v.builtAt || '-'}`
+})
+
+onMounted(async () => {
+  try {
+    const res = await fetch('/version.json', { headers: { Accept: 'application/json' } })
+    if (res.ok) versionInfo.value = await res.json()
+  } catch {
+    // 开发环境或版本文件缺失时静默忽略
+  }
+})
 
 const handleNotImplemented = () => {
   ElMessage.info('功能开发中，敬请期待')
