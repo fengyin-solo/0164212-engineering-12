@@ -5,17 +5,22 @@ services:
     build:
       context: ./frontend-portal
       dockerfile: Dockerfile
+      args:
+        # 版本信息注入镜像 label 与构建产物（ci.sh 会自动带上）
+        APP_VERSION: ${APP_VERSION:-}
+        GIT_COMMIT: ${GIT_COMMIT:-}
       platforms:
         - linux/amd64
         - linux/arm64
     container_name: portal-frontend
     ports:
-      - "8081:80"
+      # 对外端口与本地开发端口同口径，统一由根目录 .env 的 PORTAL_PORT 控制
+      - "${PORTAL_PORT:-8081}:80"
     restart: unless-stopped
     networks:
       - portal-network
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3

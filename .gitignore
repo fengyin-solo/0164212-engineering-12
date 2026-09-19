@@ -45,3 +45,6 @@ coverage/
 # Misc
 *.pem
 .npm
+
+# CI pipeline (流水线日志与临时文件)
+.ci/

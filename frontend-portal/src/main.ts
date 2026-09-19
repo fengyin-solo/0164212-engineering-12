@@ -10,6 +10,11 @@ import router from './router'
 import 'element-plus/dist/index.css'
 import '@/styles/index.scss'
 
+// 启动时打印版本信息，便于线上问题定位到具体代码版本
+console.info(
+  `[portal] version=${__APP_VERSION__} commit=${__GIT_COMMIT__} builtAt=${__BUILD_TIME__}`
+)
+
 const app = createApp(App)
 
 // 注册所有图标

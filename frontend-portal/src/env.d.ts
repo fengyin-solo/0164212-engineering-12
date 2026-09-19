@@ -14,3 +14,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+// 构建时由 vite.config.ts 注入的版本信息
+declare const __APP_VERSION__: string
+declare const __GIT_COMMIT__: string
+declare const __BUILD_TIME__: string

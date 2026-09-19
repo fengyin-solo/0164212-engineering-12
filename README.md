@@ -8,11 +8,11 @@
 
 ```bash
 cd frontend-portal
-npm install
+npm ci        # 与容器构建同口径，严格按 lock 文件安装
 npm run dev
 ```
 
-访问 http://localhost:3000
+访问 http://localhost:8081
 
 ### Docker 部署
 
@@ -21,6 +21,45 @@ docker-compose up --build -d
 ```
 
 访问 http://localhost:8081
+
+### 端口说明
+
+本地开发服务器与容器对外端口**统一为 8081**，由根目录 `.env` 中的
+`PORTAL_PORT` 单点控制（改一处，两处同时生效）：
+
+- `npm run dev` / `npm run preview` 读取 `PORTAL_PORT`（默认 8081）
+- `docker-compose.yml` 映射 `${PORTAL_PORT}:80`
+
+## 构建与上线前检查流水线
+
+`scripts/ci.sh` 把依赖安装、类型检查、构建、镜像打包、接口冒烟串成一条流程，
+改完代码先跑一遍再上线，避免到线上才发现问题：
+
+```bash
+scripts/ci.sh              # 完整流程: clean → deps → typecheck → build → docker → smoke
+scripts/ci.sh smoke        # 只重跑某一步（失败重试）
+scripts/ci.sh --from build # 从某一步继续跑
+scripts/ci.sh --local      # 无 Docker 环境：跳过镜像构建，冒烟改用本地 preview
+scripts/ci.sh --list       # 查看所有步骤
+```
+
+| 步骤 | 内容 | 失败时可定位 |
+|------|------|--------------|
+| clean | 清理上次失败的中间产物（dist、临时文件、残留冒烟容器） | - |
+| deps | `npm ci`，registry 与缓存口径见 `frontend-portal/.npmrc`（本地与容器共用） | 网络/lock 问题 |
+| typecheck | `vue-tsc --noEmit` 类型检查 | 具体文件与行号 |
+| build | `vite build`，产物写入版本元数据并校验与当前代码一致 | 构建错误 |
+| docker | 构建镜像 `portal-frontend:<版本>-<commit>`，版本写入 OCI label | 镜像构建错误 |
+| smoke | 启动产物（优先 Docker 容器，否则本地 preview），逐项校验接口响应 | 具体 URL、期望与实际 |
+
+特性：
+
+- **失败可定位**：每步日志写入 `.ci/logs/`，失败时打印步骤名、退出码、日志末尾与重跑命令
+- **接口可确认**：冒烟逐项检查 `/healthz`（容器模式）、首页响应、`build-meta.json` 版本对应
+- **版本可追溯**：产物 `dist/build-meta.json`、浏览器控制台、镜像 label 三处均可查到
+  `版本号 + git commit`，与代码一一对应
+- **可重试重跑**：任一步骤可单独重跑或从该步续跑；每步幂等
+- **不留残留**：退出时自动清理冒烟容器/进程与临时文件，`clean` 步骤清理历史中间产物
 
 ## Services
 
@@ -67,10 +106,11 @@ frontend-portal/
 │   ├── App.vue            # 根组件
 │   └── main.ts            # 入口文件
 ├── Dockerfile             # Docker 构建文件
-├── nginx.conf             # Nginx 配置
+├── nginx.conf             # Nginx 配置（含 /healthz 健康检查端点）
+├── .npmrc                 # 依赖安装口径（本地与容器共用）
 ├── package.json           # 项目依赖
 ├── tsconfig.json          # TypeScript 配置
-└── vite.config.ts         # Vite 配置
+└── vite.config.ts         # Vite 配置（端口/版本注入）
 ```
 
 ## 功能模块
@@ -84,8 +124,9 @@ frontend-portal/
 ## 开发命令
 
 ```bash
-npm run dev      # 启动开发服务器
-npm run build    # 构建生产版本
-npm run preview  # 预览生产构建
-npm run lint     # 代码检查
+npm run dev        # 启动开发服务器 (端口同容器对外口径: 8081)
+npm run build      # 构建生产版本（含类型检查与版本元数据）
+npm run preview    # 预览生产构建
+npm run typecheck  # 仅类型检查
+npm run clean      # 清理构建产物
 ```
